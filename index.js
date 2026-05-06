@@ -1,46 +1,69 @@
+require("dotenv").config();
 const express = require("express");
 const mysql = require("mysql2");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const cors = require("cors");
+const rateLimit = require("express-rate-limit");
 
 const app = express();
 app.use(express.json());
+app.use(cors());
 
 const db = mysql.createConnection({
-  host: "localhost",
-  user: "root",
-  password: "root1234",
-  database: "mi_app"
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
+  port: process.env.DB_PORT
+});
+
+// Protección contra fuerza bruta
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: "Demasiados intentos, espera 15 minutos" }
+});
+app.use("/login", limiter);
+
+const db = mysql.createConnection({
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME
 });
 
 db.connect(function(err) {
-  if (err) console.log("Error:", err);
-  else console.log("Conectado!");
+  if (err) {
+    console.error('Error conectando a MySQL:', err);
+    return;
+  }
+  console.log('Conectado a MySQL correctamente');
 });
 
 app.post("/registro", function(req, res) {
-  const email = req.body.email;
-  const pass = req.body.password;
-  const hashPass = bcrypt.hashSync(pass, 10);
+  const { email, password } = req.body;
+  if (!email || !password) {
+    return res.status(400).json({ error: "Email y password son requeridos" });
+  }
+  const hashPass = bcrypt.hashSync(password, 10);
   db.query("INSERT INTO auth (email, password) VALUES (?, ?)", [email, hashPass], function(err) {
-    if (err) return res.json({ error: err });
-    res.json({ mensaje: "Registrado!" });
+    if (err) return res.status(500).json({ error: "Error al registrar" });
+    res.status(201).json({ mensaje: "Registrado exitosamente!" });
   });
 });
 
 app.post("/login", function(req, res) {
-  const email = req.body.email;
-  const pass = req.body.password;
+  const { email, password } = req.body;
+  if (!email || !password) {
+    return res.status(400).json({ error: "Email y password son requeridos" });
+  }
   db.query("SELECT * FROM auth WHERE email = ?", [email], function(err, rows) {
-    if (err) return res.json({ error: err });
-    if (rows.length === 0) return res.json({ mensaje: "No existe" });
-    const ok = bcrypt.compareSync(pass, rows[0].password);
-    if (!ok) return res.json({ mensaje: "Password incorrecto" });
-    const token = jwt.sign({ id: rows[0].id }, "secreto123", { expiresIn: "1d" });
-    res.json({ mensaje: "Login ok", token: token });
+    if (err) return res.status(500).json({ error: "Error del servidor" });
+    if (rows.length === 0) return res.status(404).json({ error: "Usuario no existe" });
+    const ok = bcrypt.compareSync(password, rows[0].password);
+    if (!ok) return res.status(401).json({ error: "Password incorrecto" });
+    const token = jwt.sign({ id: rows[0].id }, process.env.JWT_SECRET, { expiresIn: "1d" });
+    res.json({ mensaje: "Login exitoso!", token });
   });
-});
-
-app.listen(3001, function() {
-  console.log("Servidor en puerto 3001");
 });
