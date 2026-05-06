@@ -18,6 +18,14 @@ const db = mysql.createConnection({
   port: process.env.DB_PORT
 });
 
+db.connect(function(err) {
+  if (err) {
+    console.error('Error conectando a MySQL:', err);
+    return;
+  }
+  console.log('Conectado a MySQL correctamente');
+});
+
 // Protección contra fuerza bruta
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -26,20 +34,6 @@ const limiter = rateLimit({
 });
 app.use("/login", limiter);
 
-const db = mysql.createConnection({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME
-});
-
-db.connect(function(err) {
-  if (err) {
-    console.error('Error conectando a MySQL:', err);
-    return;
-  }
-  console.log('Conectado a MySQL correctamente');
-});
 
 app.post("/registro", function(req, res) {
   const { email, password } = req.body;
