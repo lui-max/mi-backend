@@ -61,3 +61,8 @@ app.post("/login", function(req, res) {
     res.json({ mensaje: "Login exitoso!", token });
   });
 });
+
+const PORT = process.env.PORT || 8080;
+app.listen(PORT, function() {
+  console.log(`Servidor corriendo en puerto ${PORT}`);
+});
