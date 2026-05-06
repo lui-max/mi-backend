@@ -8,7 +8,9 @@ const rateLimit = require("express-rate-limit");
 
 const app = express();
 app.use(express.json());
-app.use(cors());
+app.use(cors({
+  origin: '*'
+}));
 
 const db = mysql.createConnection({
   host: process.env.DB_HOST,
