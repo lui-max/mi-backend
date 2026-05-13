@@ -8,34 +8,46 @@ const rateLimit = require("express-rate-limit");
 
 const app = express();
 app.use(express.json());
-app.use(cors({
-  origin: '*'
-}));
+app.use(cors({ origin: '*' }));
 
-const db = mysql.createConnection({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-  port: process.env.DB_PORT
-});
-
-db.connect(function(err) {
-  if (err) {
-    console.error('Error conectando a MySQL:', err);
-    return;
-  }
-  console.log('Conectado a MySQL correctamente');
-});
-
-// Protección contra fuerza bruta
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 100,
   message: { error: "Demasiados intentos, espera 15 minutos" }
 });
 app.use("/login", limiter);
 
+let db;
+
+function conectarDB() {
+  db = mysql.createConnection({
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+    port: process.env.DB_PORT
+  });
+
+  db.connect(function(err) {
+    if (err) {
+      console.error('Error MySQL:', err);
+      setTimeout(conectarDB, 5000);
+      return;
+    }
+    console.log('Conectado a MySQL correctamente');
+  });
+
+  db.on('error', function(err) {
+    console.error('Error en DB:', err);
+    if (err.code === 'PROTOCOL_CONNECTION_LOST' || 
+        err.code === 'ECONNRESET' ||
+        err.code === 'ER_SERVER_GONE_ERROR') {
+      conectarDB();
+    }
+  });
+}
+
+conectarDB();
 
 app.post("/registro", function(req, res) {
   const { email, password } = req.body;
@@ -43,10 +55,12 @@ app.post("/registro", function(req, res) {
     return res.status(400).json({ error: "Email y password son requeridos" });
   }
   const hashPass = bcrypt.hashSync(password, 10);
-  db.query("INSERT INTO auth (email, password) VALUES (?, ?)", [email, hashPass], function(err) {
-    if (err) return res.status(500).json({ error: "Error al registrar" });
-    res.status(201).json({ mensaje: "Registrado exitosamente!" });
-  });
+  db.query("INSERT INTO auth (email, password) VALUES (?, ?)", [email, hashPass],
+    function(err) {
+      if (err) return res.status(500).json({ error: "Error al registrar" });
+      res.status(201).json({ mensaje: "Registrado exitosamente!" });
+    }
+  );
 });
 
 app.post("/login", function(req, res) {
@@ -54,14 +68,16 @@ app.post("/login", function(req, res) {
   if (!email || !password) {
     return res.status(400).json({ error: "Email y password son requeridos" });
   }
-  db.query("SELECT * FROM auth WHERE email = ?", [email], function(err, rows) {
-    if (err) return res.status(500).json({ error: "Error del servidor" });
-    if (rows.length === 0) return res.status(404).json({ error: "Usuario no existe" });
-    const ok = bcrypt.compareSync(password, rows[0].password);
-    if (!ok) return res.status(401).json({ error: "Password incorrecto" });
-    const token = jwt.sign({ id: rows[0].id }, process.env.JWT_SECRET, { expiresIn: "1d" });
-    res.json({ mensaje: "Login exitoso!", token });
-  });
+  db.query("SELECT * FROM auth WHERE email = ?", [email],
+    function(err, rows) {
+      if (err) return res.status(500).json({ error: "Error del servidor" });
+      if (rows.length === 0) return res.status(404).json({ error: "Usuario no existe" });
+      const ok = bcrypt.compareSync(password, rows[0].password);
+      if (!ok) return res.status(401).json({ error: "Password incorrecto" });
+      const token = jwt.sign({ id: rows[0].id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+      res.json({ mensaje: "Login exitoso!", token });
+    }
+  );
 });
 
 const PORT = process.env.PORT || 8080;
